@@ -7,6 +7,7 @@
 """
 
 import re
+import ast
 import numpy as np
 from typing import Dict, Tuple, Optional
 
@@ -120,6 +121,37 @@ def validate_formula(formula: str) -> Tuple[bool, Optional[str]]:
         else:
             i += 1
     
+    # Parse concrete formulas without executing them. In particular, a negative
+    # Ref window is future data, not a legitimate discovery feature.
+    try:
+        tree = ast.parse(formula.replace('$', 'field_'), mode='eval')
+    except SyntaxError as error:
+        return False, f"表达式语法错误: {error.msg}"
+    arities = {
+        'Ref': 2, 'Mean': 2, 'Std': 2, 'Sum': 2, 'Min': 2, 'Max': 2,
+        'Delta': 2, 'Corr': 3, 'Cov': 3, 'Rank': 2, 'Log': 1,
+        'Abs': 1, 'Sign': 1, 'Med': 2, 'Mad': 2, 'Skew': 2, 'Kurt': 2,
+    }
+    fields = {'field_' + name for name in ['open', 'close', 'high', 'low', 'volume', 'vwap']}
+    allowed = (ast.Expression, ast.Call, ast.Name, ast.Load, ast.Constant,
+               ast.BinOp, ast.UnaryOp, ast.Add, ast.Sub, ast.Mult, ast.Div,
+               ast.Pow, ast.USub, ast.UAdd)
+    for node in ast.walk(tree):
+        if not isinstance(node, allowed):
+            return False, f"不支持的表达式结构: {type(node).__name__}"
+        if isinstance(node, ast.Name) and node.id not in fields and node.id not in arities:
+            return False, f"未知字段、算子或未替换参数: {node.id}"
+        if isinstance(node, ast.Call):
+            name = node.func.id if isinstance(node.func, ast.Name) else ''
+            if name not in arities or node.keywords or len(node.args) != arities[name]:
+                return False, f"算子或参数数量无效: {name}"
+            if arities[name] > 1:
+                try:
+                    window = ast.literal_eval(node.args[-1])
+                except (ValueError, TypeError):
+                    return False, f"{name}窗口必须是已替换的整数"
+                if isinstance(window, bool) or not isinstance(window, int) or window < 0:
+                    return False, f"{name}窗口必须是非负整数，禁止引用未来数据"
     return True, None
 
 

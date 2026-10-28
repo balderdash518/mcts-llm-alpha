@@ -1,5 +1,7 @@
 # MCTS-LLM Alpha Mining Framework
 
+当前默认接入 NeuroII 的 Qwen 思考模型与 Langfuse，运行方式及预算说明见 [接入文档](mcts-llm-alpha/docs/neuroii_langfuse.md)。
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 

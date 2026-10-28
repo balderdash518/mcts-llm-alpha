@@ -25,14 +25,7 @@ def create_formula_generator(llm_client: LLMClient, evaluator: Optional[Any] = N
     evaluator_func = None
     if evaluator is not None:
         def evaluator_func(formula, repo_factors, node):
-            # 处理evaluate_formula可能返回2个或3个值的情况
-            result = evaluator.evaluate_formula(formula, repo_factors, node)
-            if len(result) == 3:
-                # 新版本返回 (scores, factor_df, raw_scores)
-                return result[0], result[1]  # 只返回前两个值
-            else:
-                # 旧版本返回 (scores, factor_df)
-                return result
+            return evaluator.evaluate_formula(formula, repo_factors, node)
     
     def generate_formula() -> Tuple[str, str]:
         """生成初始公式和画像。"""
@@ -45,6 +38,7 @@ def create_formula_generator(llm_client: LLMClient, evaluator: Optional[Any] = N
         # 注意：现在返回的是符号公式，而不是具体公式
         return formula, portrait
     
+    generate_formula.llm_client = llm_client
     return generate_formula
 
 
@@ -63,14 +57,7 @@ def create_formula_refiner(llm_client: LLMClient, evaluator: Optional[Any] = Non
     evaluator_func = None
     if evaluator is not None:
         def evaluator_func(formula, repo_factors, node):
-            # 处理evaluate_formula可能返回2个或3个值的情况
-            result = evaluator.evaluate_formula(formula, repo_factors, node)
-            if len(result) == 3:
-                # 新版本返回 (scores, factor_df, raw_scores)
-                return result[0], result[1]  # 只返回前两个值
-            else:
-                # 旧版本返回 (scores, factor_df)
-                return result
+            return evaluator.evaluate_formula(formula, repo_factors, node)
     
     def refine_formula(node: Any, dimension: str, avoid_patterns: Optional[List[str]] = None,
                       repo_examples: Optional[List[Dict]] = None,
@@ -80,9 +67,8 @@ def create_formula_refiner(llm_client: LLMClient, evaluator: Optional[Any] = Non
             node, dimension, avoid_patterns, repo_examples, node_context,
             evaluator=evaluator_func
         )
-        # 将formula_info存储在node中，供后续分析
-        if hasattr(node, 'formula_info'):
-            node.formula_info = formula_info
+        # Candidate information belongs to the new child, never its parent.
         return formula, portrait, desc, formula_info
     
+    refine_formula.llm_client = llm_client
     return refine_formula

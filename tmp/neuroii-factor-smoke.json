@@ -1,0 +1,39 @@
+{
+  "formula": "Mean((($close - Ref($close, 1)) / Ref($close, 1)), 5)",
+  "formula_call": {
+    "estimated_prompt_tokens": 1572,
+    "omitted_evidence_records": 0,
+    "context_window": 32768,
+    "output_budget": 30940,
+    "attempt": 1,
+    "usage": {
+      "completion_tokens": 878,
+      "prompt_tokens": 1151,
+      "total_tokens": 2029
+    },
+    "finish_reason": "stop",
+    "reasoning_characters": 0,
+    "inline_thinking": true
+  },
+  "review": {
+    "score": 9.0,
+    "reason": "表达式为简洁透明的5日平均收益率，具有明确短期动量动机且无优化历史，仅5日窗口存在轻微参数任意性。"
+  },
+  "review_call": {
+    "estimated_prompt_tokens": 756,
+    "omitted_evidence_records": 0,
+    "context_window": 32768,
+    "output_budget": 31756,
+    "attempt": 1,
+    "usage": {
+      "completion_tokens": 260,
+      "prompt_tokens": 416,
+      "total_tokens": 676
+    },
+    "finish_reason": "stop",
+    "reasoning_characters": 0,
+    "inline_thinking": true
+  },
+  "trace_url": "https://jp.cloud.langfuse.com/project/cmvknrfie0001ad0ebga0voea/traces/6abbe156f4559f6c2ed35b267be5532d",
+  "session_id": "mcts-9a536b3a2b5f46999a5222656047f730"
+}

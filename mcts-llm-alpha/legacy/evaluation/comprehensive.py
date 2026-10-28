@@ -38,6 +38,17 @@ class ComprehensiveEvaluator:
         self.ranking_evaluator = RelativeRankingEvaluator(
             effectiveness_threshold=config.evaluation.effectiveness_threshold
         )
+
+    def sync_repository(self, repository):
+        """Only committed search admissions define the ranking reference pool."""
+        seen = set()
+        metrics = []
+        for alpha in repository:
+            key = alpha.get('concrete_formula') or alpha['formula']
+            if key not in seen and alpha.get('raw_scores'):
+                metrics.append(dict(alpha['raw_scores']))
+                seen.add(key)
+        self.ranking_evaluator.effective_repository = metrics
         
     def evaluate_formula(
         self, 
@@ -61,7 +72,7 @@ class ComprehensiveEvaluator:
             concrete_formula = formula
             if node and hasattr(node, 'formula_info') and node.formula_info:
                 # 检查是否是符号公式
-                if any(param in formula for param in ['w1', 'w2', 'w3', 't1', 't2', 't3']):
+                if node.formula_info.get('selected_params'):
                     # 使用选定的参数替换符号
                     selected_params = node.formula_info.get('selected_params', {})
                     if selected_params:
@@ -80,7 +91,7 @@ class ComprehensiveEvaluator:
             raw_scores, factor_df = self._evaluate_with_qlib(concrete_formula, repo_factors)
                 
             if raw_scores is None:
-                return None, None
+                return None, None, None
                 
             # 步骤2: 使用相对排名评估（按照论文要求，移除绝对值归一化）
             scores = self.ranking_evaluator.evaluate_formula_with_relative_ranking(
@@ -101,19 +112,15 @@ class ComprehensiveEvaluator:
                 # 默认过拟合分数（0-10范围的中间值）
                 scores['Overfitting'] = 5.0
                 
-            # 步骤4: 根据论文要求，只有有效的alpha才能加入有效仓库
-            # 这样才能实现"progressively raises the bar"的效果
-            if scores.get('Effectiveness', 0) >= self.config.evaluation.effectiveness_threshold:
-                # 只有通过effectiveness阈值的alpha才加入有效仓库
-                self.ranking_evaluator.add_to_effective_repository(
-                    raw_scores, 
-                    scores['Effectiveness']
-                )
+            # Evaluating alternatives is read-only. The search commits the
+            # accepted repository once through sync_repository().
                 
             # 返回scores, factor_df, 以及原始分数
             return scores, factor_df, raw_scores
             
         except Exception as e:
+            if node is not None:
+                node.evaluation_error = str(e)
             logger.error(f"评估公式 {formula} 时出错: {e}")
             import traceback
             traceback.print_exc()
@@ -134,7 +141,9 @@ class ComprehensiveEvaluator:
             end_date=self.config.data.end_date,
             universe=self._get_universe(),
             split_date=self.config.evaluation.split_date,
-            ic_method=self.config.evaluation.ic_method
+            ic_method=self.config.evaluation.ic_method,
+            data_scope=f"{self.config.data.qlib_provider_uri}:{self.config.data.data_revision}",
+            raise_on_error=True
         )
         
         

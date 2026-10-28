@@ -1,0 +1,65 @@
+# 论文数据集设置（Section 5.1）：CSI300，训练 2011–2020，测试 2021-01 至 2024-11，字段含 $vwap。
+# 规模与 verify/run2 相同（66 次生成）；qlib_provider_uri 必须覆盖 2011-01-01 至 2024-11-30。
+
+
+mcts:
+  total_search_count: 66
+  tree_initial_budget: 3
+  budget_increment: 1
+  exploration_constant: 1.0
+  dimension_temperature: 1.0
+  max_tree_iterations: 30
+  max_corrections: 3
+  max_root_attempts: 3
+  initial_seed_formula: null
+  random_seed: 0
+llm:
+  model: Qwen/Qwen3.8-27B-FP8
+  base_url: https://neuroii.com/v1
+  api_key_env: NEUROII_API_KEY
+  context_window: 32768
+  max_tokens: 32768
+  min_output_tokens: 4096
+  timeout_s: 600.0
+  stream: true
+  langfuse: 'on'
+  extra_body:
+    chat_template_kwargs:
+      enable_thinking: true
+  extra_body_by_role:
+    refinement:                 # 建议生成已完成诊断；改写画像只需落实建议
+      chat_template_kwargs:
+        enable_thinking: false
+    summary:
+      chat_template_kwargs:
+        enable_thinking: false
+  temperature: {portrait: 1.0, formula: 1.0, suggestion: 1.0, refinement: 1.0,
+                correction: 0.8, review: 0.1, summary: 0.7}
+  max_retries: 3
+  retry_delay: 1.0
+evaluation:
+  horizon: 10
+  rank_ic_min: 0.015
+  rank_ir_min: 0.3
+  relative_rank_max: 0.95
+  relative_rank_min_size: 20     # 库中因子数达到 20 后才启用 R_RankIC/R_RankIR
+  turnover_max: 1.6
+  max_correlation: 0.8
+  few_shot_k: 1
+  correlation_filter_ratio: 0.5
+  final_alpha_counts: [10, 50, 100]
+  min_days: 50
+  min_coverage: 0.3
+data:
+  qlib_provider_uri: C:\Users\27898\.qlib\qlib_data\cn_data_2024   # 改成你解压后的目录
+  universe: csi300
+  fields: [open, high, low, close, volume, vwap]
+  train_period: ['2011-01-01', '2020-12-31']
+  test_period: ['2021-01-01', '2024-11-30']
+  data_revision: paper-data-v1
+fsa:
+  top_k: 3
+  min_support: 2
+output:
+  results_dir: results
+  experiment_log_file: results/paper_csi300/ledger.jsonl

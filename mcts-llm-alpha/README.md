@@ -1,5 +1,7 @@
 # MCTS-LLM Alpha挖掘框架
 
+当前默认接入 NeuroII 的 Qwen 思考模型与 Langfuse，运行方式及预算说明见 [接入文档](docs/neuroii_langfuse.md)。
+
 基于LLM的蒙特卡洛树搜索框架，用于量化金融中的公式化Alpha因子挖掘。
 
 ## 概述
@@ -53,85 +55,47 @@ QLIB_PROVIDER_URI=G:/workspace/qlib_bin/qlib_bin
 ### 3. 运行系统
 
 ```bash
-# 直接运行脚本（推荐用于调试）
-python run_search.py --iterations 50
+# 论文设置（需要 2011-01-01 至 2024-11-30 的 Qlib 数据）
+python run_experiment.py --search-count 1000
 
-# 或使用CLI工具
-mcts-llm-alpha search --iterations 50
+# 本地 cn_data（截至 2020-09）的冒烟配置
+python run_experiment.py --config configs/live_neuroii.yaml
+
+# 中断后恢复
+python run_experiment.py --resume results/<run_id>/checkpoint.pkl --output-dir results/<run_id>
 ```
 
-## 使用方法
+每次运行在 `results/<run_id>/` 下写出 `run_manifest.json`、`search_trees.json`、
+`alpha_repository.csv`、`final_alphas_top{10,50,100}.csv`（含测试期指标）和 `checkpoint.pkl`；
+实验账本默认追加到 `logs/mcts_experiments.jsonl`，作为跨运行的历史记忆。
 
-### 基础搜索
+## 实现要点
 
-```bash
-# 使用默认参数运行MCTS搜索
-mcts-llm-alpha search
+与论文的逐项对应、信息流设计和所有自行补充的解释见
+[docs/search_feedback_and_experiments.md](docs/search_feedback_and_experiments.md)。
 
-# 使用自定义配置运行
-mcts-llm-alpha search --config config/experiment.yaml
-```
-
-### 从检查点恢复
-
-```bash
-# 从特定检查点恢复
-mcts-llm-alpha resume --checkpoint mcts_checkpoint_20240101_120000.pkl
-```
-
-### 评估Alpha仓库
-
-```bash
-# 评估保存的alpha因子
-mcts-llm-alpha evaluate --input results/alpha_repository.json
-```
+- 多棵小树：每棵树初始预算 B=3，出现新最高分时 +1；树结束后按附录 F.1 的绝对标准入库。
+- 每次扩展：按弱项 softmax 选维度 → LLM 读结构化上下文（SearchBrief）生成改进建议 →
+  按建议改写画像 → 生成符号公式和 3 组参数 → 校验/执行失败时带错误信息纠错 →
+  LLM 过拟合审阅 → 改进总结。
+- 算子集合采用论文附录 D，翻译为 Qlib 表达式执行；FSA 从有效因子库挖掘 top-3 闭合子结构。
 
 ## 项目结构
 
 ```
 mcts-llm-alpha/
 ├── src/mcts_llm_alpha/
-│   ├── config/          # 配置管理
-│   ├── llm/            # LLM集成（提示词、客户端）
-│   ├── mcts/           # MCTS算法（节点、搜索、FSA）
-│   ├── formula/        # 公式处理（清理器、修复器、评估器）
-│   ├── data/           # 数据提供者（Qlib封装）
-│   └── cli.py          # 命令行接口
-├── notebooks/          # 实验用Jupyter笔记本
-├── tests/             # 单元测试
-└── docs/              # 文档
+│   ├── config/         # 配置（默认值即论文设置）
+│   ├── formula/        # 论文算子语言：解析、校验、Qlib 翻译
+│   ├── evaluation/     # Qlib 行情、论文指标、有效因子库与入库标准
+│   ├── llm/            # 传输、提示词、SearchBrief、LLM 角色
+│   ├── mcts/           # 节点、多树搜索、FSA、实验账本
+│   └── experiment.py   # 完整实验流程（训练期搜索 + 测试期评估）
+├── configs/            # 本地数据配置
+├── legacy/             # 已被取代的旧实现（仅供对照，可删除）
+├── tests/              # 离线测试（脚本化 LLM + 合成数据）
+└── docs/
 ```
-
-## 核心特性
-
-1. **两步生成过程**：
-   - 首先生成带有高层描述的"Alpha画像"
-   - 然后将画像转换为具体的数学公式
-
-2. **多维度优化**：
-   - 有效性：信号强度和预测准确性
-   - 稳定性：跨市场条件的稳健性
-   - 换手率：交易频率优化
-   - 多样性：与现有因子的独特性
-   - 过拟合：泛化能力
-
-3. **智能公式修复**：
-   - 自动操作符映射和参数修复
-   - 全面的验证和语法检查
-
-4. **模式规避**：
-   - 频繁子树分析防止过度使用常见模式
-   - 保持alpha仓库的多样性
-
-## 配置
-
-参见`config/default.yaml`了解所有可用参数：
-
-- `max_iterations`：最大MCTS迭代次数
-- `exploration_constant`：UCT探索参数
-- `dimension_temperature`：维度选择的Softmax温度
-- `max_depth`：最大树深度
-- `checkpoint_freq`：检查点保存频率
 
 ## 开发
 

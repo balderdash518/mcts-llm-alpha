@@ -80,10 +80,10 @@ class RelativeRankingEvaluator:
         
         if metric_name == 'Turnover':
             # Turnover越大越差，计算比当前值更差（更大）的比例
-            worse_count = sum(1 for v in repo_values if v > value)
+            worse_count = sum(1 for v in repo_values if v >= value)
         else:
             # IC/IR/Diversity越小越差，计算比当前值更差（更小）的比例
-            worse_count = sum(1 for v in repo_values if v < value)
+            worse_count = sum(1 for v in repo_values if v <= value)
         
         # 返回“比当前alpha更差的比例”
         # 值越高表示当前alpha越好

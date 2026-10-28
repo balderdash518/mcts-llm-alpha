@@ -99,8 +99,8 @@ async def evaluate_overfitting_risk(
     try:
         response = await llm_client.get_completion(
             prompt,
-            temperature=0.1,  # Low temperature for consistent evaluation
-            max_tokens=200
+            temperature=getattr(llm_client, "temperatures", {}).get("review", .6),
+            max_tokens=None  # Share the dynamic reasoning/output budget
         )
         
         # 解析JSON响应
@@ -144,8 +144,8 @@ def evaluate_overfitting_risk_sync(
     try:
         response = llm_client.get_completion_sync(
             prompt,
-            temperature=0.1,
-            max_tokens=200
+            temperature=getattr(llm_client, "temperatures", {}).get("review", .6),
+            max_tokens=None  # Do not spend the entire 200-token budget on thinking
         )
         
         # 尝试从响应中提取JSON

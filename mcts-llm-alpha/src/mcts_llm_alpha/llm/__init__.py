@@ -1,11 +1,5 @@
-"""用于alpha生成的LLM集成模块。"""
+"""LLM 角色：画像、改进建议、改进、公式、纠错、改进总结与过拟合审阅。"""
 
-from .client import LLMClient
-from .prompts import FIELDS, OPS, DIMENSION_GUIDANCE
+from .client import LLMClient, GenerationError
 
-__all__ = [
-    "LLMClient",
-    "FIELDS",
-    "OPS", 
-    "DIMENSION_GUIDANCE"
-]
+__all__ = ["LLMClient", "GenerationError"]

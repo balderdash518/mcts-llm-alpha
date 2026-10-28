@@ -12,18 +12,16 @@ import pandas as pd
 
 def calc_turnover(factor_df: pd.DataFrame) -> float:
     """
-    Calculate turnover score based on rank-weight difference.
-    
-    Lower turnover (more stable rankings) gets higher score.
+    Calculate the mean absolute day-to-day percentile-rank change.
     
     Args:
         factor_df: DataFrame with factor values
         
     Returns:
-        Turnover stability score (0-1, higher is better)
+        Turnover rate (0-1, lower is better); ranking converts it to a score.
     """
     # 计算因子的横截面排名（每天）
-    factor_rank = factor_df.groupby(level='datetime').rank(pct=True)
+    factor_rank = factor_df.replace([np.inf, -np.inf], np.nan).groupby(level='datetime').rank(pct=True)
     
     # 计算相邻日期的排名变化
     turnover_list = []
@@ -34,8 +32,8 @@ def calc_turnover(factor_df: pd.DataFrame) -> float:
         curr_date = dates[i]
         
         # 获取两天都有数据的股票
-        prev_ranks = factor_rank.xs(prev_date, level='datetime')
-        curr_ranks = factor_rank.xs(curr_date, level='datetime')
+        prev_ranks = factor_rank.xs(prev_date, level='datetime').dropna()
+        curr_ranks = factor_rank.xs(curr_date, level='datetime').dropna()
         
         common_stocks = prev_ranks.index.intersection(curr_ranks.index)
         if len(common_stocks) < 3:  # 降低阈值，只要有3只股票就计算
@@ -44,7 +42,8 @@ def calc_turnover(factor_df: pd.DataFrame) -> float:
         # 计算排名差异
         rank_diff = abs(prev_ranks.loc[common_stocks] - curr_ranks.loc[common_stocks])
         daily_turnover = rank_diff.mean().values[0]
-        turnover_list.append(daily_turnover)
+        if np.isfinite(daily_turnover):
+            turnover_list.append(daily_turnover)
     
     if not turnover_list:
         return 0.5  # 默认中等分数
@@ -52,10 +51,8 @@ def calc_turnover(factor_df: pd.DataFrame) -> float:
     # 平均换手率（0-1之间）
     avg_turnover = np.mean(turnover_list)
     
-    # 转换为稳定性分数（换手率越低，分数越高）
-    # 返回值范围在0-1之间，表示因子排名的稳定性
-    turnover_stability = 1 - avg_turnover
-    return turnover_stability
+    # Keep the raw rate; the ranking evaluator handles the lower-is-better direction.
+    return avg_turnover
 
 
 def calc_daily_turnover_rate(factor_df: pd.DataFrame, top_pct: float = 0.2) -> float:

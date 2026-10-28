@@ -1,82 +1,75 @@
-# MCTS-LLM Alpha挖掘配置
+# 论文实验设置（Shi et al., AAAI 2026, Section 5.1 / Appendix F）
+# 需要覆盖 2011-01-01 至 2024-11-30 的 Qlib 日频数据（含 $vwap）。
 
-# MCTS搜索参数
 mcts:
-  max_iterations: 20           # 初始预算B
-  budget_increment: 1         # 预算增量b
-  exploration_constant: 1.0    # UCT探索常数c
-  max_depth: 5                # 最大树深度
-  max_nodes: 100              # 最大节点数
-  checkpoint_freq: 10         # 检查点保存频率
-  dimension_temperature: 1.0   # 维度选择温度T
-  early_stop_rounds: 50       # 早停轮数
-  effectiveness_threshold: 3.0 # 有效性阈值τ（0-10范围，需超过3.0分的现有alpha）
-  initial_seed_formula: null  # 初始种子公式f_seed
-  dimension_max_scores:       # 各维度最大分数e_max（0-10评分范围）
-    Effectiveness: 10.0
-    Stability: 10.0
-    Turnover: 10.0
-    Diversity: 10.0
-    Overfitting: 10.0
+  total_search_count: 1000      # 搜索次数（alpha 生成数）：1000 / 2000 / 3000
+  tree_initial_budget: 3        # 每棵树初始预算 B
+  budget_increment: 1           # 树内出现新最高分时预算 +b
+  exploration_constant: 1.0     # UCT 探索权重 c
+  dimension_temperature: 1.0    # 维度选择 softmax 温度 T
+  max_tree_iterations: 30       # 单棵树迭代安全上限（论文未规定）
+  max_corrections: 3            # 非法公式的纠错轮数上限（论文为循环至合法）
+  max_root_attempts: 3
+  initial_seed_formula: null    # 第一棵树的种子公式 f_seed；为空则由 LLM 生成
+  random_seed: 0
 
-# LLM配置
 llm:
-  model: "gpt-4o-mini"        # 模型名称
-  temperature:
-    initial: 1.0              # 初始生成温度
-    refinement: 0.9           # 优化温度
-    formula_generation: 0.7   # 公式生成温度
-  max_retries: 3             # 最大重试次数
-  retry_delay: 1.0           # 重试延迟（秒）
+  model: "Qwen/Qwen3.8-27B-FP8"   # 论文主实验为 GPT-4.1；模型是实验变量
+  base_url: "https://neuroii.com/v1"
+  api_key_env: "NEUROII_API_KEY"
+  context_window: 32768
+  max_tokens: 32768
+  min_output_tokens: 4096
+  timeout_s: 600.0
+  stream: true
+  langfuse: "on"
+  extra_body:
+    chat_template_kwargs:
+      enable_thinking: true
+  extra_body_by_role:           # 落实建议、转述结果两步关闭 thinking 以节省时间
+    refinement:                 # 建议生成已完成诊断；改写画像只需落实建议
+      chat_template_kwargs:
+        enable_thinking: false
+    summary:
+      chat_template_kwargs:
+        enable_thinking: false
+  temperature:                  # 附录 F.1
+    portrait: 1.0
+    formula: 1.0
+    suggestion: 1.0
+    refinement: 1.0
+    correction: 0.8
+    review: 0.1
+    summary: 0.7               # 论文未给出
+  max_retries: 3
+  retry_delay: 1.0
 
-# 公式评估
 evaluation:
-  effectiveness_threshold: 3.0  # 有效性阈值 (τ)，0-10范围
-  diversity_threshold: 2.0      # 多样性阈值，0-10范围
-  overall_threshold: 5.0        # 整体阈值，0-10范围
-  repository_size: 20          # 仓库大小
-  split_date: "2022-01-01"     # IS/OOS分割日期
-  ic_method: "spearman"        # IC计算方法 ("pearson" 或 "spearman")
-  min_stocks: 10               # 评估最少股票数量
-  min_days: 50                 # 评估最少天数
+  horizon: 10                   # 预测目标：10 日或 30 日收益（收盘价买卖）
+  rank_ic_min: 0.015            # 附录 F.1 有效因子标准
+  rank_ir_min: 0.3
+  relative_rank_max: 0.95
+  relative_rank_min_size: 20     # 库中因子数达到 20 后才启用 R_RankIC/R_RankIR
+  turnover_max: 1.6
+  max_correlation: 0.8
+  few_shot_k: 1
+  correlation_filter_ratio: 0.5
+  final_alpha_counts: [10, 50, 100]
+  min_days: 50
+  min_coverage: 0.3
 
-# 数据配置
 data:
-  start_date: "2020-01-01"     # 开始日期
-  end_date: "2023-12-31"       # 结束日期
-  universe: "csi300"           # 股票池
-  test_instruments:            # 测试用股票
-    - "SH600000"
-    - "SH600016"
-    - "SH600036"
+  qlib_provider_uri: null       # 为空时读取环境变量 QLIB_PROVIDER_URI
+  universe: "csi300"            # csi300 或 csi1000
+  fields: [open, high, low, close, volume, vwap]
+  train_period: ["2011-01-01", "2020-12-31"]
+  test_period: ["2021-01-01", "2024-11-30"]
+  data_revision: "unversioned"  # 数据更新后修改，隔离历史实验
 
-# 模式挖掘
 fsa:
-  min_support: 3              # 最小支持度
-  max_avoid_patterns: 5       # 最大规避模式数
+  top_k: 3
+  min_support: 2
 
-# 公式约束
-formula:
-  max_parameters: 3           # 最大参数数
-  min_operators: 2            # 最小操作符数
-  window_range:               # 窗口范围
-    min: 3
-    max: 60
-  default_windows:            # 默认窗口大小
-    Std: 20
-    Mean: 20
-    Sum: 20
-    Min: 20
-    Max: 20
-    Med: 20
-    Mad: 20
-    Skew: 20
-    Kurt: 20
-    Rank: 5
-    Corr: 20
-
-# 输出配置
 output:
-  results_file: "mcts_results.csv"     # 结果文件
-  checkpoint_dir: "checkpoints"        # 检查点目录
-  log_level: "INFO"                   # 日志级别
+  results_dir: "results"
+  experiment_log_file: "logs/mcts_experiments.jsonl"

@@ -55,7 +55,7 @@ class FormulaEvaluationCache:
         return hashlib.md5(normalized.encode()).hexdigest()
         
     def _get_cache_key(self, formula: str, start_date: str, end_date: str, 
-                      universe_hash: str) -> str:
+                      universe_hash: str, evaluation_context=None) -> str:
         """
         生成缓存键。
         
@@ -70,11 +70,13 @@ class FormulaEvaluationCache:
         """
         formula_hash = self._get_formula_hash(formula)
         # 包含日期和股票池信息，确保不同条件下的评估结果分开缓存
-        key = f"{formula_hash}_{start_date}_{end_date}_{universe_hash}"
+        context = json.dumps(evaluation_context or {}, sort_keys=True, default=str)
+        protocol_hash = hashlib.md5(context.encode()).hexdigest()[:12]
+        key = f"{formula_hash}_{start_date}_{end_date}_{universe_hash}_{protocol_hash}"
         return key
         
     def get(self, formula: str, start_date: str, end_date: str, 
-            universe: List[str]) -> Optional[Tuple[Dict[str, float], pd.DataFrame]]:
+            universe: List[str], evaluation_context=None) -> Optional[Tuple[Dict[str, float], pd.DataFrame]]:
         """
         从缓存获取评估结果。
         
@@ -91,7 +93,7 @@ class FormulaEvaluationCache:
         universe_str = ','.join(sorted(universe))
         universe_hash = hashlib.md5(universe_str.encode()).hexdigest()[:8]
         
-        cache_key = self._get_cache_key(formula, start_date, end_date, universe_hash)
+        cache_key = self._get_cache_key(formula, start_date, end_date, universe_hash, evaluation_context)
         
         # 先检查内存缓存
         if cache_key in self.cache:
@@ -119,7 +121,7 @@ class FormulaEvaluationCache:
         
     def set(self, formula: str, start_date: str, end_date: str, 
             universe: List[str], scores: Dict[str, float], 
-            factor_df: pd.DataFrame) -> None:
+            factor_df: pd.DataFrame, evaluation_context=None) -> None:
         """
         将评估结果存入缓存。
         
@@ -135,7 +137,7 @@ class FormulaEvaluationCache:
         universe_str = ','.join(sorted(universe))
         universe_hash = hashlib.md5(universe_str.encode()).hexdigest()[:8]
         
-        cache_key = self._get_cache_key(formula, start_date, end_date, universe_hash)
+        cache_key = self._get_cache_key(formula, start_date, end_date, universe_hash, evaluation_context)
         
         # 存入内存缓存
         self.cache[cache_key] = (scores, factor_df)

@@ -1,194 +1,160 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-"""
-MCTS-LLM Alpha挖掘的配置管理。
+"""Configuration. Defaults follow the paper's experimental setup (Section 5.1, Appendix F).
 
-该模块使用Pydantic模型和YAML文件提供配置加载和验证。
+Unknown keys are rejected so that a stale YAML file cannot silently fall back to
+defaults.
 """
 
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional, Tuple
+
 import yaml
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-class MCTSConfig(BaseModel):
-    """MCTS搜索配置。"""
-    max_iterations: int = Field(50, description="Initial budget B (maximum MCTS iterations)")
-    budget_increment: int = Field(1, description="Budget increment b when new best score found")
-    exploration_constant: float = Field(1.0, description="UCT exploration parameter c")
-    max_depth: int = Field(5, description="Maximum tree depth")
-    max_nodes: int = Field(100, description="Maximum nodes in tree")
-    checkpoint_freq: int = Field(10, description="Checkpoint saving frequency")
-    dimension_temperature: float = Field(1.0, description="Temperature T for dimension selection")
-    early_stop_rounds: int = Field(50, description="Rounds without improvement before stopping")
-    effectiveness_threshold: float = Field(3.0, description="Effectiveness threshold τ for valid alphas")
-    initial_seed_formula: Optional[str] = Field(None, description="Initial seed formula f_seed")
-    dimension_max_scores: Dict[str, float] = Field(
-        default_factory=lambda: {
-            "Effectiveness": 10.0,
-            "Stability": 10.0,
-            "Turnover": 10.0,
-            "Diversity": 10.0,
-            "Overfitting": 10.0
-        },
-        description="Maximum scores e_max for each dimension"
-    )
+class Strict(BaseModel):
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
 
-class LLMConfig(BaseModel):
-    """LLM配置。"""
-    model: str = Field("gpt-4o-mini", description="OpenAI model name")
-    temperature: Dict[str, float] = Field(
-        default_factory=lambda: {
-            "initial": 1.0,
-            "refinement": 0.9,
-            "formula_generation": 0.7
-        }
-    )
-    max_retries: int = Field(3, description="Maximum retry attempts")
-    retry_delay: float = Field(1.0, description="Delay between retries")
+class MCTSConfig(Strict):
+    total_search_count: int = Field(1000, gt=0, description="Alpha generations: 1000 / 2000 / 3000")
+    tree_initial_budget: int = Field(3, gt=0, description="Initial budget B of each search tree")
+    budget_increment: int = Field(1, ge=0, description="b, added when a node sets a new tree best")
+    exploration_constant: float = Field(1.0, description="UCT exploration weight c")
+    dimension_temperature: float = Field(1.0, gt=0, description="Softmax temperature T")
+    max_tree_iterations: int = Field(30, gt=0, description="Safety cap on one tree's iterations")
+    max_corrections: int = Field(3, ge=0, description="Correction rounds for an invalid formula")
+    max_root_attempts: int = Field(3, gt=0)
+    initial_seed_formula: Optional[str] = Field(None, description="f_seed for the first tree")
+    random_seed: int = 0
 
 
-class EvaluationConfig(BaseModel):
-    """公式评估配置。"""
-    # 移除模拟模式，仅使用qlib进行真实评估
-    # 始终使用相对排名（按照论文要求）
-    effectiveness_threshold: float = Field(3.0, description="Minimum IC for effective alpha")
-    diversity_threshold: float = Field(2.0, description="Minimum diversity score")
-    overall_threshold: float = Field(5.0, description="Minimum overall score")
-    repository_size: int = Field(20, description="Maximum alpha repository size")
-    split_date: str = Field("2022-01-01", description="IS/OOS split date")
-    ic_method: str = Field("spearman", description="IC calculation method")
-    min_stocks: int = Field(10, description="Minimum stocks for evaluation")
-    min_days: int = Field(50, description="Minimum days for evaluation")
-    
+class LLMConfig(Strict):
+    model: str = "gpt-4.1"
+    base_url: Optional[str] = None
+    api_key_env: str = "OPENAI_API_KEY"
+    timeout_s: float = Field(600.0, gt=0)
+    stream: bool = True
+    context_window: int = Field(32768, gt=512)
+    max_tokens: int = Field(32768, gt=0)
+    min_output_tokens: int = Field(4096, gt=0)
+    extra_body: Dict[str, Any] = Field(default_factory=dict)
+    # Per-role overrides merged into extra_body, e.g. disable thinking for the summary.
+    extra_body_by_role: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    reasoning_effort: Optional[str] = None
+    langfuse: str = "auto"
+    # Appendix F.1: portraits/formulas 1.0, correction 0.8, overfitting review 0.1.
+    temperature: Dict[str, float] = Field(default_factory=lambda: {
+        "portrait": 1.0, "formula": 1.0, "suggestion": 1.0, "refinement": 1.0,
+        "correction": 0.8, "review": 0.1, "summary": 0.7})
+    max_retries: int = Field(3, ge=1)
+    retry_delay: float = 1.0
+
+    @field_validator("langfuse")
+    @classmethod
+    def check_langfuse(cls, v):
+        if v not in {"auto", "on", "off"}:
+            raise ValueError("langfuse must be auto, on or off")
+        return v
+
+    @field_validator("temperature", "extra_body_by_role")
+    @classmethod
+    def check_roles(cls, v):
+        roles = {"portrait", "formula", "suggestion", "refinement", "correction", "review", "summary"}
+        unknown = set(v) - roles
+        if unknown:
+            raise ValueError(f"unknown temperature roles {sorted(unknown)}; expected {sorted(roles)}")
+        return v
+
+    @model_validator(mode="after")
+    def check_budget_and_key(self):
+        from urllib.parse import urlparse
+        if self.min_output_tokens + 320 >= self.context_window:
+            raise ValueError("min_output_tokens must leave room for prompt and safety margin")
+        if self.base_url and urlparse(self.base_url).hostname != "api.openai.com" \
+                and self.api_key_env == "OPENAI_API_KEY":
+            raise ValueError("Custom endpoint needs its own api_key_env; do not forward OPENAI_API_KEY")
+        return self
 
 
-class DataConfig(BaseModel):
-    """数据配置。"""
-    start_date: str = Field("2020-01-01")
-    end_date: str = Field("2023-12-31")
-    universe: str = Field("csi300", description="Stock universe")
-    test_instruments: List[str] = Field(
-        default_factory=lambda: ["SH600000", "SH600016", "SH600036"]
-    )
-    qlib_provider_uri: Optional[str] = Field(None, description="Qlib data directory")
+class EvaluationConfig(Strict):
+    horizon: int = Field(10, gt=0, description="Forward return horizon in trading days (10 or 30)")
+    # Appendix F.1 effective alpha check
+    rank_ic_min: float = 0.015
+    rank_ir_min: float = 0.3
+    relative_rank_max: float = 0.95
+    relative_rank_min_size: int = Field(20, ge=1, description="R_RankIC/R_RankIR apply from this repository size")
+    turnover_max: float = 1.6
+    max_correlation: float = 0.8
+    # Appendix C.2 / F.1 few-shot selection
+    few_shot_k: int = Field(1, ge=0)
+    correlation_filter_ratio: float = Field(0.5, ge=0, lt=1)
+    final_alpha_counts: List[int] = Field(default_factory=lambda: [10, 50, 100])
+    min_days: int = Field(50, gt=0, description="Minimum dates with a computable RankIC")
+    min_coverage: float = Field(0.3, gt=0, le=1, description="Minimum share of label cells with a factor value")
 
 
-class FSAConfig(BaseModel):
-    """频繁子树分析配置。"""
-    min_support: int = Field(3, description="Minimum support for frequent patterns")
-    max_avoid_patterns: int = Field(5, description="Maximum patterns to avoid")
+class DataConfig(Strict):
+    qlib_provider_uri: Optional[str] = None
+    region: str = Field("cn", description="Qlib region of the dataset: cn or us")
+    universe: str = "csi300"
+    fields: List[str] = Field(default_factory=lambda: ["open", "high", "low", "close", "volume", "vwap"])
+    train_period: Tuple[str, str] = ("2011-01-01", "2020-12-31")
+    test_period: Tuple[str, str] = ("2021-01-01", "2024-11-30")
+    data_revision: str = Field("unversioned", description="Change when the market data is revised")
+
+    @field_validator("region")
+    @classmethod
+    def check_region(cls, v):
+        if v not in {"cn", "us"}:
+            raise ValueError("region must be cn or us")
+        return v
+
+    @model_validator(mode="after")
+    def check_periods(self):
+        if not self.train_period[0] < self.train_period[1] < self.test_period[0] <= self.test_period[1]:
+            raise ValueError("train_period must end before test_period starts")
+        return self
+
+    def provider_uri(self):
+        uri = self.qlib_provider_uri or os.getenv("QLIB_PROVIDER_URI")
+        if not uri:
+            raise ValueError("Set data.qlib_provider_uri or the QLIB_PROVIDER_URI environment variable")
+        if not (Path(uri).expanduser() / "calendars" / "day.txt").exists():
+            raise FileNotFoundError(
+                f"No Qlib daily data at {uri} (calendars/day.txt is missing). Download and extract "
+                "the data there, or point data.qlib_provider_uri at the folder that contains "
+                "calendars/, instruments/ and features/.")
+        return uri
 
 
-class FormulaConfig(BaseModel):
-    """公式生成约束。"""
-    max_parameters: int = Field(3)
-    min_operators: int = Field(2)
-    window_range: Dict[str, int] = Field(
-        default_factory=lambda: {"min": 3, "max": 60}
-    )
-    default_windows: Dict[str, int] = Field(
-        default_factory=lambda: {
-            "Std": 20, "Mean": 20, "Sum": 20, "Min": 20,
-            "Max": 20, "Med": 20, "Mad": 20, "Skew": 20,
-            "Kurt": 20, "Rank": 5, "Corr": 20
-        }
-    )
+class FSAConfig(Strict):
+    top_k: int = Field(3, ge=0, description="Frequent closed subtrees to avoid (Appendix F.1)")
+    min_support: int = Field(2, ge=1)
 
 
-class OutputConfig(BaseModel):
-    """输出配置。"""
-    results_file: str = Field("mcts_results.csv")
-    checkpoint_dir: str = Field("checkpoints")
-    log_level: str = Field("INFO")
+class OutputConfig(Strict):
+    results_dir: str = "results"
+    experiment_log_file: str = "logs/mcts_experiments.jsonl"
 
 
-class Config(BaseModel):
-    """主配置模型。"""
+class Config(Strict):
     mcts: MCTSConfig = Field(default_factory=MCTSConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
     data: DataConfig = Field(default_factory=DataConfig)
     fsa: FSAConfig = Field(default_factory=FSAConfig)
-    formula: FormulaConfig = Field(default_factory=FormulaConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
-    
-    @validator('data')
-    def set_qlib_path(cls, v):
-        """如果未提供，则从环境变量设置Qlib路径。"""
-        if v.qlib_provider_uri is None:
-            v.qlib_provider_uri = os.getenv("QLIB_PROVIDER_URI", 
-                                           "G:/workspace/qlib_bin/qlib_bin")
-        return v
-    
-    class Config:
-        """Pydantic配置。"""
-        extra = "allow"
-        validate_assignment = True
 
 
 def load_config(config_path: Optional[str] = None) -> Config:
-    """
-    从YAML文件加载配置。
-    
-    参数：
-        config_path: 配置文件路径，默认为config/default.yaml
-        
-    返回：
-        Config对象
-    """
-    if config_path is None:
-        # 使用默认配置
-        config_dir = Path(__file__).parent
-        config_path = config_dir / "default.yaml"
-    else:
-        config_path = Path(config_path)
-    
-    if config_path.exists():
-        with open(config_path, 'r', encoding='utf-8') as f:
-            data = yaml.safe_load(f)
-        return Config(**data)
-    else:
-        # 返回默认配置
-        return Config()
+    path = Path(config_path) if config_path else Path(__file__).parent / "default.yaml"
+    if not path.exists():
+        raise FileNotFoundError(f"Configuration file does not exist: {path}")
+    with open(path, "r", encoding="utf-8") as stream:
+        return Config(**(yaml.safe_load(stream) or {}))
 
 
 def save_config(config: Config, config_path: str) -> None:
-    """
-    将配置保存到YAML文件。
-    
-    参数：
-        config: 要保存的Config对象
-        config_path: 保存配置的路径
-    """
-    with open(config_path, 'w', encoding='utf-8') as f:
-        yaml.dump(config.dict(), f, default_flow_style=False, allow_unicode=True)
-
-
-def merge_configs(base_config: Config, overrides: Dict[str, Any]) -> Config:
-    """
-    合并配置和覆盖项。
-    
-    参数：
-        base_config: 基础配置
-        overrides: 覆盖项字典
-        
-    返回：
-        合并后的配置
-    """
-    config_dict = base_config.dict()
-    
-    # 深度合并覆盖项
-    def deep_merge(base: dict, override: dict) -> dict:
-        for key, value in override.items():
-            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
-                base[key] = deep_merge(base[key], value)
-            else:
-                base[key] = value
-        return base
-    
-    merged = deep_merge(config_dict, overrides)
-    return Config(**merged)
+    with open(config_path, "w", encoding="utf-8") as stream:
+        yaml.safe_dump(config.model_dump(mode="json"), stream, allow_unicode=True, sort_keys=False)

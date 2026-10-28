@@ -1,0 +1,80 @@
+{
+  "turnover_direction": {
+    "stable_metric": 1.0,
+    "flipping_metric": 0.5555555555555557,
+    "stable_score": 1.0,
+    "flipping_score": 5.0
+  },
+  "ties": {
+    "diversity_score_all_equal": 0.0,
+    "paper_1_minus_strict_better_rank": 10.0
+  },
+  "evaluation_mutates_ranking_repository": {
+    "evaluations_of_identical_formula": 6,
+    "effective_repository_entries": 5,
+    "effectiveness_sequence": [
+      7.0,
+      7.0,
+      7.0,
+      7.0,
+      7.0,
+      0.0
+    ],
+    "diversity_sequence": [
+      10.0,
+      10.0,
+      10.0,
+      10.0,
+      10.0,
+      0.0
+    ]
+  },
+  "cache_repo_dependency": {
+    "empty_repo_diversity": 1.0,
+    "identical_factor_in_repo_cached_diversity": 1.0,
+    "identical_factor_in_repo_fresh_diversity": 0.0
+  },
+  "parent_formula_info_mutation": {
+    "parent_formula": "Mean($close,w1)",
+    "before": {
+      "symbolic_formula": "Mean($close,w1)",
+      "selected_params": {
+        "w1": 5
+      }
+    },
+    "after": {
+      "symbolic_formula": "Mean($volume,w1)",
+      "selected_params": {
+        "w1": 30
+      }
+    }
+  },
+  "shadowed_validator": {
+    "definitions": [
+      164,
+      342
+    ],
+    "active_definition_has_validation": false
+  },
+  "lookahead_validator": {
+    "Ref($close, -1)": true,
+    "Mean($close, 0)": true,
+    "UnknownOp($close, 5)": true
+  },
+  "child_factor_alias": {
+    "parent_has_factor": true,
+    "child_has_factor_returns": true,
+    "child_has_factor": false
+  },
+  "new_node_history_at_evaluation": {
+    "history_present_at_evaluation": false
+  },
+  "symbolic_fsa_parameters": {
+    "same_structure_w1": [
+      "func_Mean(field_close,w1)"
+    ],
+    "same_structure_w2": [
+      "func_Mean(field_close,w2)"
+    ]
+  }
+}

@@ -67,3 +67,5 @@ outputs/
 CLAUDE.md
 claude.md
 .claude/
+# Local runtime
+.venv/

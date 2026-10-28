@@ -1,0 +1,23 @@
+{
+  "result": {
+    "status": "ok",
+    "result": 3973
+  },
+  "call": {
+    "estimated_prompt_tokens": 99,
+    "omitted_evidence_records": 0,
+    "context_window": 32768,
+    "output_budget": 32413,
+    "attempt": 1,
+    "usage": {
+      "completion_tokens": 103,
+      "prompt_tokens": 78,
+      "total_tokens": 181
+    },
+    "finish_reason": "stop",
+    "reasoning_characters": 0,
+    "inline_thinking": true
+  },
+  "trace_url": "https://jp.cloud.langfuse.com/project/cmvknrfie0001ad0ebga0voea/traces/1fcc83a6123e562ccf00576151418ea2",
+  "session_id": "mcts-132dec3e8c634174aa586df2ecfee098"
+}
